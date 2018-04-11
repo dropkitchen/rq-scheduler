@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class Scheduler(object):
     redis_scheduler_namespace_prefix = 'rq:scheduler:'
     scheduled_jobs_key = 'rq:scheduler:scheduled_jobs'
+    lock_key = 'rq:scheduler:scheduled_jobs_lock'
     queue_class = Queue
     job_class = Job
 
@@ -96,21 +97,18 @@ class Scheduler(object):
 
         This function returns True if a lock is acquired. False otherwise.
         """
-        key = '%s_lock' % self.scheduler_key
         now = time.time()
         expires = int(self._interval) + 10
         self._lock_acquired = self.connection.set(
-                key, now, ex=expires, nx=True)
+                self.lock_key, now, ex=expires, nx=True)
         return self._lock_acquired
 
     def remove_lock(self):
         """
         Remove acquired lock.
         """
-        key = '%s_lock' % self.scheduler_key
-
         if self._lock_acquired:
-            self.connection.delete(key)
+            self.connection.delete(self.lock_key)
 
     def _install_signal_handlers(self):
         """
