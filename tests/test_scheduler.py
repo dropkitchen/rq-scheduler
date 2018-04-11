@@ -87,6 +87,20 @@ class TestScheduler(RQTestCase):
         except:
             self.fail("Cannot unregister two schedulers")
 
+    def test_count_active_schedulers(self):
+        n = 10
+        schedulers = [Scheduler(connection=self.testconn) for _ in range(n)]
+
+        for i, scheduler in enumerate(schedulers):
+            self.assertEqual(i, schedulers[0].count_active())
+            scheduler.register_birth()
+
+        for i, scheduler in enumerate(schedulers):
+            self.assertEqual(n - i, schedulers[0].count_active())
+            scheduler.register_death()
+
+        self.assertEqual(0, schedulers[0].count_active())
+
     def test_create_job(self):
         """
         Ensure that jobs are created properly.

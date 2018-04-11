@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--pid', help='A filename to use for the PID file.', metavar='FILE')
     parser.add_argument('-j', '--job-class', help='Custom RQ Job class')
     parser.add_argument('-q', '--queue-class', help='Custom RQ Queue class')
+    parser.add_argument('-s', '--show-active', action='store_true', default=False, help='Show current active schedulers')
 
     args = parser.parse_args()
 
@@ -58,7 +59,18 @@ def main():
                           interval=args.interval,
                           job_class=args.job_class,
                           queue_class=args.queue_class)
-    scheduler.run(burst=args.burst)
+
+    if args.show_active:
+        scheduler_count = scheduler.count_active(connection=connection)
+        if scheduler_count == 1:
+            print("There is 1 active scheduler")
+        else:
+            print("There are {0} active schedulers".format(scheduler_count))
+
+        for key in scheduler.all_keys(connection=connection):
+            print("\t- {0}".format(key))
+    else:
+        scheduler.run(burst=args.burst)
 
 if __name__ == '__main__':
     main()
