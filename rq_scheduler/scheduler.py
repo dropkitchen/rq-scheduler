@@ -1,5 +1,7 @@
 import logging
+import os
 import signal
+import socket
 import time
 
 from datetime import datetime
@@ -12,22 +14,23 @@ from rq.utils import backend_class
 
 from redis import WatchError
 
-from .utils import from_unix, to_unix, get_next_scheduled_time, rationalize_until
+from .utils import from_unix, to_unix, get_next_scheduled_time, rationalize_until, utcformat
 
 logger = logging.getLogger(__name__)
 
 
 class Scheduler(object):
-    scheduler_key = 'rq:scheduler'
+    redis_scheduler_namespace_prefix = 'rq:scheduler:'
     scheduled_jobs_key = 'rq:scheduler:scheduled_jobs'
     queue_class = Queue
     job_class = Job
 
     def __init__(self, queue_name='default', queue=None, interval=60, connection=None,
-                 job_class=None, queue_class=None):
+                 job_class=None, queue_class=None, name=None):
         from rq.connections import resolve_connection
         self.connection = resolve_connection(connection)
         self._queue = queue
+        self._name = name
         if self._queue is None:
             self.queue_name = queue_name
         else:
@@ -39,30 +42,51 @@ class Scheduler(object):
         self.queue_class = backend_class(self, 'queue_class',
                                          override=queue_class)
 
-    def register_birth(self):
-        self.log.info('Registering birth')
-        if self.connection.exists(self.scheduler_key) and \
-                not self.connection.hexists(self.scheduler_key, 'death'):
-            raise ValueError("There's already an active RQ scheduler")
+    @property
+    def name(self):
+        """Returns the name of the scheduler, under which it is registered to the
+        monitoring system.
+        By default, the name of the worker is constructed from the current
+        (short) host name and the current PID.
+        """
+        if self._name is None:
+            hostname = socket.gethostname()
+            shortname, _, _ = hostname.partition('.')
+            self._name = '{0}.{1}'.format(shortname, os.getpid())
+        return self._name
 
-        key = self.scheduler_key
-        now = time.time()
+    @property
+    def key(self):
+        """Returns the scheduler's redis key"""
+        return self.redis_scheduler_namespace_prefix + self.name
+
+    def register_birth(self):
+        self.log.debug('Registering birth of scheduler %s', self.name)
+        if self.connection.exists(self.key) and \
+                not self.connection.hexists(self.key, 'death'):
+            msg = 'There exists an active scheduler named {0!r} already'
+            raise ValueError(msg.format(self.name))
 
         with self.connection._pipeline() as p:
-            p.delete(key)
-            p.hset(key, 'birth', now)
+            p.delete(self.key)
+
+            now = datetime.utcnow()
+            self.birth_date = now
+            p.hset(self.key, 'birth', utcformat(now))
+
             # Set scheduler key to expire a few seconds after polling interval
             # This way, the key will automatically expire if scheduler
             # quits unexpectedly
-            p.expire(key, int(self._interval) + 10)
+            p.expire(self.key, int(self._interval) + 10)
+
             p.execute()
 
     def register_death(self):
         """Registers its own death."""
-        self.log.info('Registering death')
+        self.log.debug('Registering death')
         with self.connection._pipeline() as p:
-            p.hset(self.scheduler_key, 'death', time.time())
-            p.expire(self.scheduler_key, 60)
+            p.hset(self.key, 'death', utcformat(datetime.utcnow()))
+            p.expire(self.key, 60)
             p.execute()
 
     def acquire_lock(self):
@@ -393,7 +417,7 @@ class Scheduler(object):
             self.enqueue_job(job)
 
         # Refresh scheduler key's expiry
-        self.connection.expire(self.scheduler_key, int(self._interval) + 10)
+        self.connection.expire(self.key, int(self._interval) + 10)
         return jobs
 
     def run(self, burst=False):
@@ -401,7 +425,6 @@ class Scheduler(object):
         Periodically check whether there's any job that should be put in the queue (score
         lower than current time).
         """
-
         self.register_birth()
         self._install_signal_handlers()
 
