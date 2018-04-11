@@ -68,6 +68,25 @@ class TestScheduler(RQTestCase):
         scheduler1.remove_lock()
         self.assertNotIn(key, tl(self.testconn.keys('*')))
 
+    def test_two_schedulers_running(self):
+        """
+        Ensure that we can register birth on two schedulers
+        """
+        scheduler1 = Scheduler(connection=self.testconn, name='foo')
+        scheduler2 = Scheduler(connection=self.testconn, name='bar')
+
+        try:
+            scheduler1.register_birth()
+            scheduler2.register_birth()
+        except:
+            self.fail("Cannot register two schedulers")
+
+        try:
+            scheduler1.register_death()
+            scheduler2.register_death()
+        except:
+            self.fail("Cannot unregister two schedulers")
+
     def test_create_job(self):
         """
         Ensure that jobs are created properly.
@@ -632,10 +651,9 @@ class TestScheduler(RQTestCase):
         """
         Test that scheduler accepts 'interval' of type float, less than 1 second.
         """
-        key = Scheduler.scheduler_key
         lock_key = '%s_lock' % Scheduler.scheduler_key
-        self.assertNotIn(key, tl(self.testconn.keys('*')))
         scheduler = Scheduler(connection=self.testconn, interval=0.1)   # testing interval = 0.1 second
+        self.assertNotIn(scheduler.key, tl(self.testconn.keys('*')))
         self.assertEqual(scheduler._interval, 0.1)
 
         #acquire lock

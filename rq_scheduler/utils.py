@@ -50,3 +50,10 @@ def rationalize_until(until=None):
     elif isinstance(until, timedelta):
         until = to_unix((datetime.utcnow() + until))
     return until
+
+
+_TIMESTAMP_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
+
+
+def utcformat(dt):
+    return dt.strftime(_TIMESTAMP_FORMAT)
