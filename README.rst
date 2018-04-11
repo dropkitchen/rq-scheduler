@@ -217,6 +217,7 @@ The script accepts these arguments:
 * ``-i INTERVAL`` or ``--interval INTERVAL``: How often the scheduler checks for new jobs to add to the queue (in seconds, can be floating-point for more precision).
 * ``-j`` or ``--job-class``: specify custom job class for rq to use (python module.Class)
 * ``-q`` or ``--queue-class``: specify custom queue class for rq to use (python module.Class)
+* ``-s`` or ``--show-active``: shows current active schedulers
 
 The arguments pull default values from environment variables with the
 same names but with a prefix of ``RQ_REDIS_``.

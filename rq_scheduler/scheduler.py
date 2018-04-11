@@ -14,6 +14,7 @@ from rq.utils import backend_class
 
 from redis import WatchError
 
+from . import scheduler_registration
 from .utils import from_unix, to_unix, get_next_scheduled_time, rationalize_until, utcformat
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 class Scheduler(object):
     redis_scheduler_namespace_prefix = 'rq:scheduler:'
     scheduled_jobs_key = 'rq:scheduler:scheduled_jobs'
+    redis_schedulers_keys = scheduler_registration.REDIS_SCHEDULER_KEYS
     lock_key = 'rq:scheduler:scheduled_jobs_lock'
     queue_class = Queue
     job_class = Job
@@ -42,6 +44,23 @@ class Scheduler(object):
         self.job_class = backend_class(self, 'job_class', override=job_class)
         self.queue_class = backend_class(self, 'queue_class',
                                          override=queue_class)
+
+    def all_keys(self, connection=None, queue=None):
+        if connection is None:
+            connection = self.connection
+        if queue is None:
+            queue = self._queue
+
+        return scheduler_registration.get_keys(connection=connection, queue=queue)
+
+    def count_active(self, connection=None, queue=None):
+        """Returns the number of schedulers by queue or connection"""
+        if connection is None:
+            connection = self.connection
+        if queue is None:
+            queue = self._queue
+
+        return len(self.all_keys(connection=connection, queue=queue))
 
     @property
     def name(self):
@@ -80,6 +99,9 @@ class Scheduler(object):
             # quits unexpectedly
             p.expire(self.key, int(self._interval) + 10)
 
+            # Register this scheduler
+            scheduler_registration.register(self, p)
+
             p.execute()
 
     def register_death(self):
@@ -88,6 +110,10 @@ class Scheduler(object):
         with self.connection._pipeline() as p:
             p.hset(self.key, 'death', utcformat(datetime.utcnow()))
             p.expire(self.key, 60)
+
+            # Unregister this scheduler
+            scheduler_registration.unregister(self, p)
+
             p.execute()
 
     def acquire_lock(self):
