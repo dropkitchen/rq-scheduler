@@ -1,8 +1,7 @@
 import logging
-import os
 import signal
-import socket
 import time
+from uuid import uuid4
 
 from datetime import datetime
 from itertools import repeat
@@ -33,7 +32,7 @@ class Scheduler(object):
         from rq.connections import resolve_connection
         self.connection = resolve_connection(connection)
         self._queue = queue
-        self._name = name
+        self.name = name or uuid4().hex
         if self._queue is None:
             self.queue_name = queue_name
         else:
@@ -61,19 +60,6 @@ class Scheduler(object):
             queue = self._queue
 
         return len(self.all_keys(connection=connection, queue=queue))
-
-    @property
-    def name(self):
-        """Returns the name of the scheduler, under which it is registered to the
-        monitoring system.
-        By default, the name of the worker is constructed from the current
-        (short) host name and the current PID.
-        """
-        if self._name is None:
-            hostname = socket.gethostname()
-            shortname, _, _ = hostname.partition('.')
-            self._name = '{0}.{1}'.format(shortname, os.getpid())
-        return self._name
 
     @property
     def key(self):
